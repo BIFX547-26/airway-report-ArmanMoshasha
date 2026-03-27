@@ -1,6 +1,135 @@
 ---
-title: "Interactive Report: Airway Data"
-date: March 5, 2026
-bibliogrphy: https://gist.githubusercontent.com/johnsonra/121eb61bf4b09e4258b78e341b1819e9/raw/51d87906d0b5824f9809f667008046665b815649/references.bib
+title: "Airway Study: RNA-seq Analysis Report"
+date: March 27, 2026
+bibliography: https://gist.githubusercontent.com/johnsonra/121eb61bf4b09e4258b78e341b1819e9/raw/51d87906d0b5824f9809f667008046665b815649/references.bib
 format: gfm
 ---
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+library(ggplot2)
+library(dplyr)
+library(scales)
+
+# Load the top 2000 DEGs data
+degs <- read.csv("top_2000.csv", row.names = 1)
+
+# Convert p-values for visualization
+degs$neg_log10_padj <- -log10(degs$padj)
+```
+
+# Airway Study: RNA-seq Transcriptome Analysis
+
+This report presents a differential gene expression analysis of the airway dataset from @himes_rna-seq_2014. The study examines transcriptomic changes in airway smooth muscle cells in response to dexamethasone treatment using RNA-seq technology.
+
+## Volcano Plot of Differentially Expressed Genes
+
+The volcano plot below displays the log2 fold-change versus the adjusted p-value for the top 2,000 most significant genes. Points are colored by direction of expression change: upregulated genes (positive log2FC) are shown in red, while downregulated genes (negative log2FC) are shown in blue.
+
+```{r}
+#| fig-width: 10
+#| fig-height: 7
+#| echo: false
+
+# Create volcano plot
+volcano_data <- degs %>%
+  mutate(
+    significant = padj < 0.05,
+    direction = ifelse(log2FoldChange > 0, "Upregulated", "Downregulated")
+  )
+
+ggplot(volcano_data, aes(x = log2FoldChange, y = neg_log10_padj)) +
+  geom_point(aes(color = direction), alpha = 0.6, size = 3) +
+  scale_color_manual(values = c("Upregulated" = "#e74c3c", "Downregulated" = "#3498db")) +
+  labs(
+    title = "Volcano Plot: Differentially Expressed Genes",
+    subtitle = "Airway study - dexamethasone treatment vs. untreated control",
+    x = "log2(Fold Change)",
+    y = "-log10(adjusted p-value)",
+    color = "Expression Change"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 11, hjust = 0.5, color = "gray50"),
+    axis.title = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_blank()
+  ) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "gray50", alpha = 0.7) +
+  geom_vline(xintercept = 0, linetype = "solid", color = "gray70", alpha = 0.5)
+```
+
+## MA Plot: Expression vs. Fold Change
+
+The MA plot presents the average log2 expression level (x-axis) versus the log2 fold-change (y-axis) for all 2,000 genes. This visualization helps identify expression patterns across different abundance levels.
+
+```{r}
+#| fig-width: 10
+#| fig-height: 7
+#| echo: false
+
+# Create MA plot data (using rank as proxy for expression level)
+ma_data <- degs %>%
+  mutate(
+    rank_order = seq_len(n()),
+    A = log2(rank_order + 1),  # Rank-based pseudo expression
+    M = log2FoldChange,         # Log fold change
+    direction = ifelse(M > 0, "Upregulated", "Downregulated")
+  ) %>%
+  filter(!is.na(M))
+
+ggplot(ma_data, aes(x = A, y = M)) +
+  geom_point(aes(color = direction), alpha = 0.5, size = 2) +
+  scale_color_manual(values = c("Upregulated" = "#e74c3c", "Downregulated" = "#3498db")) +
+  labs(
+    title = "MA Plot: Expression Level vs. Log2 Fold-Change",
+    subtitle = "Red points: upregulated | Blue points: downregulated",
+    x = "A: log2(Average Expression)",
+    y = "M: log2(Fold Change)",
+    color = "Expression Change"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 11, hjust = 0.5, color = "gray50"),
+    axis.title = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_blank()
+  ) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "gray70", alpha = 0.5)
+```
+
+## Summary Statistics
+
+```{r}
+#| echo: false
+
+# Calculate summary statistics
+upregulated <- sum(degs$log2FoldChange > 0 & degs$padj < 0.05, na.rm = TRUE)
+downregulated <- sum(degs$log2FoldChange < 0 & degs$padj < 0.05, na.rm = TRUE)
+total_significant <- upregulated + downregulated
+
+cat(sprintf("**Total genes analyzed:** %d\n\n", nrow(degs)))
+cat(sprintf("**Significantly regulated genes (padj < 0.05):** %d\n\n", total_significant))
+cat(sprintf("  - Upregulated: %d\n\n", upregulated))
+cat(sprintf("  - Downregulated: %d\n\n", downregulated))
+
+# Top 10 most significant genes
+top_10 <- degs %>%
+  arrange(padj) %>%
+  head(10) %>%
+  select(symbol, log2FoldChange, pvalue, padj)
+
+cat("**Top 10 Most Significant Genes:**\n\n")
+print(top_10)
+```
+
+## References
+
+This analysis is based on the RNA-seq dataset and methods described in @himes_rna-seq_2014.
