@@ -1,7 +1,217 @@
 ---
 title: "Interactive Report: Airway Data"
-date: March 5, 2026
-bibliogrphy: https://gist.githubusercontent.com/johnsonra/121eb61bf4b09e4258b78e341b1819e9/raw/51d87906d0b5824f9809f667008046665b815649/references.bib
+date: March 27, 2026
+bibliography: https://gist.githubusercontent.com/johnsonra/121eb61bf4b09e4258b78e341b1819e9/raw/51d87906d0b5824f9809f667008046665b815649/references.bib
 filters:
   - shinylive
 ---
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 800
+
+library(shiny)
+
+# Load the top 2000 DEGs data
+degs <- read.csv("https://gist.githubusercontent.com/johnsonra/121eb61bf4b09e4258b78e341b1819e9/raw/9d4d1650713378ce59e06a21b62f940433100a81/top_2000.csv", row.names = 1)
+
+# Prepare data
+degs$neg_log10_padj <- -log10(degs$padj)
+degs$rank_order <- seq_len(nrow(degs))
+degs$A <- log2(degs$rank_order + 1)
+
+ui <- page_fillable(
+  layout_sidebar(
+    sidebar = sidebar(
+      sliderInput(
+        "padj_threshold",
+        "Adjusted p-value threshold (padj):",
+        min = 0.001,
+        max = 0.1,
+        value = 0.05,
+        step = 0.001
+      ),
+      numericInput(
+        "lfc_threshold",
+        "Log2 Fold-Change threshold (|log2FC|):",
+        value = 1,
+        min = -5,
+        max = 5,
+        step = 0.5
+      ),
+      hr(),
+      verbatimTextOutput("summary_text")
+    ),
+    navset_card_tab(
+      title = "Interactive Airway RNA-seq Analysis",
+      nav_panel(
+        "Volcano Plot",
+        plotOutput("volcano_plot", height = "600px")
+      ),
+      nav_panel(
+        "MA Plot",
+        plotOutput("ma_plot", height = "600px")
+      ),
+      nav_panel(
+        "Summary Table",
+        tableOutput("summary_table")
+      )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  
+  # Create filtered data based on thresholds
+  filtered_data <- reactive({
+    data.frame(
+      degs,
+      significant = degs$padj < input$padj_threshold & abs(degs$log2FoldChange) > input$lfc_threshold,
+      direction = ifelse(
+        degs$padj < input$padj_threshold & abs(degs$log2FoldChange) > input$lfc_threshold,
+        ifelse(degs$log2FoldChange > 0, "Upregulated", "Downregulated"),
+        "Not Significant"
+      )
+    )
+  })
+  
+  # Volcano plot
+  output$volcano_plot <- renderPlot({
+    data <- filtered_data()
+    
+    # Set colors
+    colors <- ifelse(data$direction == "Upregulated", "#e74c3c",
+                     ifelse(data$direction == "Downregulated", "#3498db", "#bdc3c7"))
+    
+    plot(
+      data$log2FoldChange,
+      data$neg_log10_padj,
+      col = colors,
+      pch = 16,
+      alpha = 0.6,
+      main = paste(
+        "Volcano Plot\n",
+        "padj threshold:", input$padj_threshold,
+        "| log2FC threshold:", input$lfc_threshold
+      ),
+      xlab = "log2(Fold Change)",
+      ylab = "-log10(adjusted p-value)",
+      cex.main = 1.2,
+      cex.lab = 1.1,
+      cex = 1.5
+    )
+    
+    # Add threshold lines
+    abline(h = -log10(input$padj_threshold), col = "red", lty = 2, lwd = 1.5)
+    abline(v = c(-input$lfc_threshold, input$lfc_threshold), col = "blue", lty = 2, lwd = 1.5)
+    abline(v = 0, col = "gray50", lwd = 1)
+    
+    # Add legend
+    legend(
+      "topright",
+      legend = c("Upregulated", "Downregulated", "Not Significant"),
+      col = c("#e74c3c", "#3498db", "#bdc3c7"),
+      pch = 16,
+      cex = 1
+    )
+  })
+  
+  # MA plot
+  output$ma_plot <- renderPlot({
+    data <- filtered_data()
+    
+    # Set colors
+    colors <- ifelse(data$direction == "Upregulated", "#e74c3c",
+                     ifelse(data$direction == "Downregulated", "#3498db", "#bdc3c7"))
+    
+    plot(
+      log10(data$A + 1),
+      data$log2FoldChange,
+      col = colors,
+      pch = 16,
+      alpha = 0.5,
+      main = paste(
+        "MA Plot\n",
+        "padj threshold:", input$padj_threshold,
+        "| log2FC threshold:", input$lfc_threshold
+      ),
+      xlab = "log10(Gene Rank)",
+      ylab = "log2(Fold Change)",
+      cex.main = 1.2,
+      cex.lab = 1.1,
+      cex = 1.2
+    )
+    
+    # Add threshold lines
+    abline(h = 0, col = "gray50", lwd = 1)
+    abline(h = c(-input$lfc_threshold, input$lfc_threshold), col = "blue", lty = 2, lwd = 1.5)
+    
+    # Add legend
+    legend(
+      "topright",
+      legend = c("Upregulated", "Downregulated", "Not Significant"),
+      col = c("#e74c3c", "#3498db", "#bdc3c7"),
+      pch = 16,
+      cex = 1
+    )
+  })
+  
+  # Summary statistics table
+  output$summary_table <- renderTable({
+    data <- filtered_data()
+    
+    upregulated <- sum(data$direction == "Upregulated")
+    downregulated <- sum(data$direction == "Downregulated")
+    not_sig <- sum(data$direction == "Not Significant")
+    
+    data.frame(
+      Category = c("Upregulated", "Downregulated", "Not Significant", "Total"),
+      Count = c(upregulated, downregulated, not_sig, nrow(data)),
+      Mean_log2FC = c(
+        round(mean(data$log2FoldChange[data$direction == "Upregulated"]), 3),
+        round(mean(data$log2FoldChange[data$direction == "Downregulated"]), 3),
+        round(mean(data$log2FoldChange[data$direction == "Not Significant"]), 3),
+        round(mean(data$log2FoldChange), 3)
+      )
+    )
+  }, striped = TRUE, bordered = TRUE)
+  
+  # Summary text
+  output$summary_text <- renderText({
+    data <- filtered_data()
+    
+    upregulated <- sum(data$direction == "Upregulated")
+    downregulated <- sum(data$direction == "Downregulated")
+    sig_count <- upregulated + downregulated
+    
+    paste0(
+      "Total genes analyzed: 2000\n\n",
+      "Genes meeting thresholds:\n",
+      "Upregulated: ", upregulated, "\n",
+      "Downregulated: ", downregulated, "\n",
+      "Total significant: ", sig_count
+    )
+  })
+}
+
+shinyApp(ui, server)
+```
+
+## Overview
+
+This interactive report provides an exploratory analysis of the airway RNA-seq dataset from @himes_rna-seq_2014. Use the controls in the sidebar to adjust the significance thresholds and explore how genes are classified as differentially expressed.
+
+**Features:**
+- **Volcano Plot**: Visualize log2 fold-change vs. adjusted p-value with customizable thresholds
+- **MA Plot**: View expression levels (rank-based) vs. fold-change relationships  
+- **Dynamic Summary**: See gene counts and statistics update in real-time as you adjust filters
+
+**How to Use:**
+1. Adjust the "Adjusted p-value threshold" slider to change the significance cutoff
+2. Adjust the "Log2 Fold-Change threshold" to control the magnitude of expression change
+3. Explore the different tabs to see volcano plots, MA plots, and summary statistics
+4. Red points indicate upregulated genes, blue points indicate downregulated genes, gray points are not significant
+
+## References
+
+This analysis is based on the RNA-seq dataset and methods described in @himes_rna-seq_2014.
