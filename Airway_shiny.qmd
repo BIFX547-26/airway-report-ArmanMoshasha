@@ -1,6 +1,200 @@
 ---
 title: "Interactive Report: Airway Data"
-date: March 5, 2026
-bibliogrphy: https://gist.githubusercontent.com/johnsonra/121eb61bf4b09e4258b78e341b1819e9/raw/51d87906d0b5824f9809f667008046665b815649/references.bib
+date: March 27, 2026
+bibliography: https://gist.githubusercontent.com/johnsonra/121eb61bf4b09e4258b78e341b1819e9/raw/51d87906d0b5824f9809f667008046665b815649/references.bib
+format: html
 server: shiny
 ---
+
+## Setup
+
+```{r}
+#| context: setup
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(scales)
+
+# Load the airway dataset
+airway_data <- read.csv("top_2000.csv", row.names = 1)
+
+# Add a column to identify gene regulation status
+airway_data <- airway_data %>%
+  mutate(regulation = "Not Significant")
+```
+
+## Introduction
+
+This interactive report provides an exploratory analysis of the airway RNA-seq dataset. Use the controls below to filter genes based on statistical significance and fold-change thresholds. The plots and statistics will update dynamically as you adjust the parameters.
+
+## Input Controls {.sidebar}
+
+```{r}
+#| panel: sidebar
+sliderInput(
+  "padj_threshold",
+  label = "Adjusted p-value threshold (padj):",
+  min = 0.001,
+  max = 0.1,
+  value = 0.05,
+  step = 0.001
+)
+
+numericInput(
+  "lfc_threshold",
+  label = "Log2 Fold-Change threshold:",
+  value = 1,
+  min = -5,
+  max = 5,
+  step = 0.1
+)
+
+hr()
+
+textOutput("summary_text")
+```
+
+## Analysis
+
+### Volcano Plot
+
+```{r}
+#| panel: fill
+plotOutput("volcano_plot", height = 500)
+```
+
+### MA Plot
+
+```{r}
+plotOutput("ma_plot", height = 500)
+```
+
+### Summary Statistics
+
+```{r}
+tableOutput("summary_table")
+```
+
+## Reactive Expressions
+
+```{r}
+#| context: server
+
+# Create a reactive dataset with gene annotations based on thresholds
+filtered_data <- reactive({
+  airway_data %>%
+    mutate(
+      regulation = case_when(
+        padj < input$padj_threshold & log2FoldChange > input$lfc_threshold ~ "Upregulated",
+        padj < input$padj_threshold & log2FoldChange < -input$lfc_threshold ~ "Downregulated",
+        TRUE ~ "Not Significant"
+      ),
+      color = case_when(
+        regulation == "Upregulated" ~ "#E74C3C",
+        regulation == "Downregulated" ~ "#3498DB",
+        TRUE ~ "#BDC3C7"
+      )
+    )
+})
+
+# Generate volcano plot
+output$volcano_plot <- renderPlot({
+  data <- filtered_data()
+  
+  ggplot(data, aes(x = log2FoldChange, y = -log10(padj), color = regulation)) +
+    geom_point(size = 2, alpha = 0.7) +
+    scale_color_manual(
+      values = c(
+        "Upregulated" = "#E74C3C",
+        "Downregulated" = "#3498DB",
+        "Not Significant" = "#BDC3C7"
+      )
+    ) +
+    geom_vline(xintercept = c(-input$lfc_threshold, input$lfc_threshold), 
+               linetype = "dashed", color = "gray50", alpha = 0.5) +
+    geom_hline(yintercept = -log10(input$padj_threshold), 
+               linetype = "dashed", color = "gray50", alpha = 0.5) +
+    labs(
+      title = "Volcano Plot: Gene Expression Changes",
+      x = "Log2 Fold-Change",
+      y = "-Log10 Adjusted P-value",
+      color = "Regulation"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      legend.position = "right"
+    )
+})
+
+# Generate MA plot
+output$ma_plot <- renderPlot({
+  data <- filtered_data()
+  
+  # Calculate A value based on rank (since we don't have raw counts)
+  data <- data %>%
+    mutate(A = rank(padj))
+  
+  ggplot(data, aes(x = log10(A + 1), y = log2FoldChange, color = regulation)) +
+    geom_point(size = 2, alpha = 0.7) +
+    scale_color_manual(
+      values = c(
+        "Upregulated" = "#E74C3C",
+        "Downregulated" = "#3498DB",
+        "Not Significant" = "#BDC3C7"
+      )
+    ) +
+    geom_hline(yintercept = c(-input$lfc_threshold, input$lfc_threshold), 
+               linetype = "dashed", color = "gray50", alpha = 0.5) +
+    geom_hline(yintercept = 0, linetype = "solid", color = "black", alpha = 0.3) +
+    labs(
+      title = "MA Plot: Expression Changes",
+      x = "Log10(Gene Rank)",
+      y = "Log2 Fold-Change (M)",
+      color = "Regulation"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      legend.position = "right"
+    )
+})
+
+# Generate summary statistics
+output$summary_table <- renderTable({
+  data <- filtered_data()
+  
+  summary_stats <- data %>%
+    group_by(regulation) %>%
+    summarise(
+      `Number of Genes` = n(),
+      `Mean Log2FC` = round(mean(log2FoldChange), 3),
+      `Median Log2FC` = round(median(log2FoldChange), 3),
+      `Mean -Log10(padj)` = round(mean(-log10(padj)), 3),
+      .groups = 'drop'
+    ) %>%
+    arrange(factor(regulation, levels = c("Upregulated", "Downregulated", "Not Significant")))
+  
+  summary_stats
+}, striped = TRUE, bordered = TRUE)
+
+# Generate summary text
+output$summary_text <- renderText({
+  data <- filtered_data()
+  
+  upregulated <- sum(data$regulation == "Upregulated")
+  downregulated <- sum(data$regulation == "Downregulated")
+  not_sig <- sum(data$regulation == "Not Significant")
+  total <- nrow(data)
+  
+  paste0(
+    "Summary:\n\n",
+    "Upregulated: ", upregulated, "\n",
+    "Downregulated: ", downregulated, "\n",
+    "Not Significant: ", not_sig, "\n\n",
+    "Total Genes: ", total
+  )
+})
+```
+
+## References
