@@ -9,6 +9,12 @@ airway dataset from Himes et al. (2014). The study examines
 transcriptomic changes in airway smooth muscle cells in response to
 dexamethasone treatment using RNA-seq technology.
 
+## Interactive Version
+
+Want to explore the data interactively? Check out the **[Interactive
+Shiny Report](Airway_shiny.html)** where you can adjust significance
+thresholds and dynamically filter the genes in real-time!
+
 ## Volcano Plot of Differentially Expressed Genes
 
 The volcano plot below displays the log2 fold-change versus the adjusted

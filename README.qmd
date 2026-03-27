@@ -25,6 +25,10 @@ degs$neg_log10_padj <- -log10(degs$padj)
 
 This report presents a differential gene expression analysis of the airway dataset from @himes_rna-seq_2014. The study examines transcriptomic changes in airway smooth muscle cells in response to dexamethasone treatment using RNA-seq technology.
 
+## Interactive Version
+
+Want to explore the data interactively? Check out the **[Interactive Shiny Report](Airway_shiny.html)** where you can adjust significance thresholds and dynamically filter the genes in real-time!
+
 ## Volcano Plot of Differentially Expressed Genes
 
 The volcano plot below displays the log2 fold-change versus the adjusted p-value for the top 2,000 most significant genes. Points are colored by direction of expression change: upregulated genes (positive log2FC) are shown in red, while downregulated genes (negative log2FC) are shown in blue.
